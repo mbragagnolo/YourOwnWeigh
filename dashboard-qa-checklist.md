@@ -1,35 +1,39 @@
-# QA Checklist: Health overview dashboard
+# QA Checklist: Withings-style health overview
 
-> Spec: `dashboard-spec.md` · branch `windows-local` · web app v0.4.12-local.1
+> Spec: `dashboard-spec.md` (refined) · branch `windows-local` · web app v0.4.12-local.2
 
 ## Setup
-- [ ] On this PC, open http://127.0.0.1:8095 in your usual browser, sign in, and reload once with **Ctrl+F5** → does the footer say **v0.4.12-local.1** (new styles and script loaded)?
+- [ ] On this PC, open http://127.0.0.1:8095 in your usual browser, sign in, and reload with **Ctrl+F5** → does the footer say **v0.4.12-local.2**?
 
-## Tiles (top of the Dashboard)
-- [ ] Look at the tiles at full window width → does your eye land on the big value first, then the rating, and does the page feel consistent with the other pages (Readings, Users)?
-- [ ] Read your ratings: BMI **Obese**, Body Fat **Very High**, Body Water **Low**, Visceral Fat **Healthy**, Metabolic Age **Above Your Age**, Heart Rate **Normal** → do the words feel right in tone (informative rather than alarming), and are they in line with what the Withings app used to tell you?
-- [ ] Look at the change line under each value (e.g. `= 0.0 kg`, `▲ 0.3 %`) → is "=" clear as "no change", or would you rather hide a zero change or write "No change"?
-- [ ] Judgment call made without you: a resting heart rate **below 60 bpm** would show **Low** in amber (common in fit people) → is that the behaviour you want?
-- [ ] Open **About these ranges** under the tiles → is the explanation enough, and is it in the right place?
-- [ ] Click the **Partner** tab → does the "No readings recorded yet" view look intentional rather than broken?
+## Overview
+- [ ] Look at the page top to bottom at full window width → does it read like the Withings app (weight first, then composition, then the list), and does your eye land on the weight?
+- [ ] The weight chart stops at about two-thirds of the card width on a wide window (so it doesn't grow huge) → does the empty space to its right look intentional, or would you rather it filled the card?
+- [ ] Read the change line under the weight (`= 0.0 % since the previous weigh-in`) → is a percentage the right way to show it, and does "=" read as "no change"?
+- [ ] Look at the **Body Composition** bar → are the three colours easy to tell apart, and is Bone (a thin sliver) still readable from its legend?
+- [ ] In **All Body Measurements**, look at the range bars for BMI, Body Fat, Body Water, Visceral Fat, Metabolic Age and Heart Rate → can you tell at a glance where you sit, and is the dark marker visible on the red and yellow segments?
+- [ ] The rows without a rating (Fat Mass, Muscle, Bone, BMR…) show only the value → does the list feel uneven with and without bars, or is that fine?
+- [ ] Hover over a few rows → does the whole row feel clickable (highlight, pointer), and does the › make it clear it opens something?
 
-## Charts (Trends)
-- [ ] Move the mouse over several points of the **Weight** chart, including the leftmost and rightmost → does the tooltip appear right away next to the point, stay readable (not cut off at the chart edges), and disappear when you move away?
-- [ ] Tick **Body Fat** under **Also Chart** → does the page update promptly with the new chart and the box still ticked? Does the jump back to the top of the page on each tick bother you?
-- [ ] With your few readings, click **1 Year** and **All** → do the points bunched at the right-hand side still look sensible, or is it confusing?
-- [ ] On **Body Fat**, **BMI** and **Body Water**, look at the green healthy-range band → is it visible without being distracting, and does the "Healthy range" label stay clear of the line and points?
-- [ ] The vertical axis only labels the lowest and highest values (plus the band edges) → is that enough to read the chart, or do you want more gridlines?
-- [ ] Judgment call made without you: only **Weight** is charted until you tick others → is that the right default, or should some (e.g. Body Fat) be on from the start?
+## Measurement pages
+- [ ] Click **Visceral Fat**, then **Body Fat** → does the verdict line ("Your visceral fat is in the high range") read naturally, and is the reference line under it (e.g. "Reference values for men 40–59 (Gallagher et al. 2000)") useful or noise?
+- [ ] On those pages, look at the labelled range bar → are the numbers sitting over the right boundaries, and do the band names line up under their segments?
+- [ ] Click **Metabolic Age** → judgment call: its bar has one dividing line (your age), with the marker placed on a scale of ±¼ of your age. Does the marker position look sensible?
+- [ ] Click **Muscle Mass** (no rating) → does the page feel complete with just the value, change and chart, or empty?
+- [ ] Switch the range buttons on a measurement page and use **← Overview** → do you land where you expect each time?
+- [ ] Hover chart points on a measurement page, including the first and last → does the tooltip show and stay readable at the edges?
+
+## Narrow window / phone width
+- [ ] Narrow the browser window to phone width (or the browser's device view at ~375 px) and scroll the overview → do the range bars under each value look right, and are the chart's axis labels still readable? (They get very small at this width, as the old charts did.)
 
 ## Keyboard
-- [ ] Press **Tab** from the top of the page through the tabs, range buttons, checkboxes and into a chart → is the focus always visible, and does focusing a chart point show its tooltip?
+- [ ] Press **Tab** from the top through the tabs, range buttons and measurement rows, then **Enter** on a row → is the focus always visible, and does Enter open the page?
 
-## Narrow window
-- [ ] Make the browser window as narrow as a phone (or use the browser's device view at ~375 px) → the 13 tiles stack in one column before the charts; is that scroll length acceptable, or would you prefer two tiles per row on small screens?
+## Partner
+- [ ] Click the **Partner** tab → does "No readings recorded yet" look intentional?
 
 ## Already covered (no need to check)
-- Tests: values and calculated body fat %, water % and BMI; every rating band and its edges; age at the reading date; latest/previous per metric (heart rate kept when a newer weight-only reading arrives); chart markers, ranges, band, empty and single-reading cases, escaping; tabs, unknown user/range values, chart toggles keeping user and range, kg/lb display, empty states and a corrupt reading (137 server tests, type-check clean).
-- Checked by Claude: rendered from your real database read-only (13 tiles, 5 charts, no broken values); screenshots at 1280 px and in a true 375 px frame (nothing cut off or overflowing); the browser runs app.js (all 81 chart markers made keyboard-focusable); new CSS served by the rebuilt server.
+- Tests (146, type-check clean): every rating band and its edges (visceral fat at exactly 5 and 10 included), ratings and bars always agreeing, marker positions, verdict sentences, composition shares and when the bar hides, the header's % change, row ratings and links, measurement pages (verdict, basis, labelled edges, chart with band, links keeping the measurement), unknown or empty measurements falling back to the overview, weight-only users, ranges, kg/lb display, empty states and a corrupt reading.
+- Checked by Claude: rendered from your real database read-only (overview, Body Fat, Visceral Fat and Muscle Mass pages; Visceral Fat shows High; no broken values); screenshots at 1280 px and in a true 375 px frame (nothing cut off or overflowing); the server serves the new stylesheet.
 
 ## Notes
 <!-- Write anything that felt off here, or just tell Claude. -->
