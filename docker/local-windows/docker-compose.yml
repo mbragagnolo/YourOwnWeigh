@@ -1,0 +1,50 @@
+﻿# Fully local YourOwnWeigh on one Windows PC (Docker Desktop).
+#
+#   Browser / bridge --http--> 127.0.0.1:${DASHBOARD_PORT} -> caddy -> yow:8080 (loopback only)
+#   Scale  --http/https-->  ${SCALE_IP}:80/443 -> caddy -> yow:8081 (scale-only)
+#
+# The scale-only listener serves nothing but the scale's POST endpoints, so the
+# dashboard is never reachable from the LAN. Nothing here needs the internet
+# after the image is built (setup itself fetches settings/firmware from Withings).
+name: yow-local
+
+services:
+  yow:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    image: yow:local
+    container_name: yow
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      # Must match the address the browser/bridge use (the Host header check).
+      YOW_PUBLIC_ORIGIN: http://127.0.0.1:${DASHBOARD_PORT:-8095}
+      YOW_SCALE_PORT: "8081"
+      YOW_SCALE_HOST: 0.0.0.0
+      YOW_SCALE_PROXY_HOST: yow:8081
+    volumes:
+      - yow-data:/data            # SQLite DB + first-run bootstrap token
+    # No published port: the image sets YOW_TRUST_PROXY=1, which treats a
+    # request without X-Forwarded-Proto as https. The dashboard therefore goes
+    # through caddy, which sends X-Forwarded-Proto: http (else the bridge page's
+    # WebSocket and invitations fail the Origin check with 403).
+
+  caddy:
+    image: caddy:2.10-alpine
+    container_name: yow-caddy
+    restart: unless-stopped
+    depends_on: [yow]
+    environment:
+      SCALE_IP: ${SCALE_IP:?set SCALE_IP in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data          # Caddy's internal (self-signed) CA
+    ports:
+      - "${SCALE_IP}:80:80"
+      - "${SCALE_IP}:443:443"
+      - "127.0.0.1:${DASHBOARD_PORT:-8095}:8080"   # dashboard + bridge: this PC only
+
+volumes:
+  yow-data:
+  caddy-data:

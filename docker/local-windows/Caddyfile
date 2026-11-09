@@ -1,0 +1,28 @@
+# Scale traffic only. The scale connects by IP (no SNI), so default_sni picks
+# the internal certificate. Patched WBS06/WBS13 firmware does not verify it.
+{
+	admin off
+	auto_https disable_redirects
+	skip_install_trust
+	default_sni {$SCALE_IP}
+}
+
+# Dashboard + bridge, published on the host's loopback only. Caddy keeps the
+# browser's Host (127.0.0.1:PORT) and sets X-Forwarded-Proto: http, so the
+# server's origin matches the browser's.
+http://:8080 {
+	reverse_proxy yow:8080
+}
+
+http://:80 {
+	reverse_proxy yow:8081 {
+		header_up Host yow:8081
+	}
+}
+
+https://{$SCALE_IP}:443 {
+	tls internal
+	reverse_proxy yow:8081 {
+		header_up Host yow:8081
+	}
+}
