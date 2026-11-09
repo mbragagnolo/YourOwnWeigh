@@ -345,76 +345,6 @@ test("assigning a WBS13 reading updates recognition on the next session without 
   }
 });
 
-test("dashboard metric form submissions preserve other users' current selections", async () => {
-  const h = await harness();
-  try {
-    const sessionid = ((await (await h.open()).json()) as any).body.sessionid;
-    for (const userid of ["17", "18"]) {
-      assert.equal(
-        (
-          await h.post("/measure", {
-            action: "batchstore",
-            sessionid,
-            macaddress: MAC,
-            userid,
-            devtype: "1",
-            category: "1",
-            measuregrps: JSON.stringify({
-              measuregrps: [
-                {
-                  meastime: Math.floor(Date.now() / 1000) - 60,
-                  measures: [
-                    { type: 1, value: 80000, unit: -3 },
-                    { type: 8, value: 2000, unit: -2 },
-                    { type: 11, value: 72, unit: 0 },
-                  ],
-                },
-              ],
-            }),
-          })
-        ).status,
-        200,
-      );
-    }
-    let html = await (await h.web("/")).text();
-    // Submit the actual rendered hidden fields and changed selector, as a GET
-    // form does with either auto-submit or the Show button (no JS required).
-    const choose = async (name: string, value: string) => {
-      const form = [
-        ...html.matchAll(
-          /<form method="get" class="metric-picker">([\s\S]*?)<\/form>/g,
-        ),
-      ]
-        .map((m) => m[1])
-        .find((s) => s.includes(`<select name="${name}"`));
-      assert.ok(form);
-      assert.match(form, new RegExp(`<option value="${value}"(?: selected)?>`));
-      const fields = new URLSearchParams(
-        [
-          ...form.matchAll(
-            /<input type="hidden" name="([^"]+)" value="([^"]*)">/g,
-          ),
-        ].map((m) => [m[1], m[2]]),
-      );
-      fields.append(name, value);
-      assert.equal(fields.getAll(name).length, 1);
-      html = await (await h.web(`/?${fields}`)).text();
-      return fields;
-    };
-    await choose("metric_17", "11");
-    const second = await choose("metric_18", "8");
-    assert.equal(second.get("metric_17"), "11");
-    assert.match(html, /72 bpm/);
-    assert.match(html, /20\.00 kg/);
-    const third = await choose("metric_17", "1");
-    assert.equal(third.get("metric_18"), "8");
-    assert.match(html, /80\.00 kg/);
-    assert.match(html, /20\.00 kg/);
-  } finally {
-    h.cleanup();
-  }
-});
-
 test("WBS13 authenticates, receives its local roster every session and stores mixed measurement groups atomically", async () => {
   const h = await harness();
   try {
@@ -548,12 +478,9 @@ test("WBS13 authenticates, receives its local roster every session and stores mi
     ).json()) as any;
     assert.equal(health.reading, null);
     const html = await (await h.web("/")).text();
-    assert.match(html, /80\.00 kg/);
-    assert.match(html, />Heart Rate</);
-    assert.doesNotMatch(html, /<select name="metric_18"/); // Sam has no new metric.
-    const heart = await (await h.web("/?metric_17=11")).text();
-    assert.match(heart, /72 bpm/);
-    assert.doesNotMatch(heart, /0\.00 kg/);
+    assert.match(html, /80\.0 kg/);
+    assert.match(html, /data-metric="heart_rate_bpm"[\s\S]*?72 bpm/);
+    assert.match(await (await h.web("/?user=18")).text(), /No readings recorded yet/); // Sam has none.
     assert.match(await (await h.web("/readings?metric=8")).text(), /20\.00 kg/);
     // More recent weight-only rows must not hide previously received metrics.
     for (let i = 0; i < 12; i++)
@@ -569,7 +496,10 @@ test("WBS13 authenticates, receives its local roster every session and stores mi
           ],
         }),
       });
-    assert.match(await (await h.web("/?metric_17=11")).text(), /72 bpm/);
+    assert.match(
+      await (await h.web("/")).text(),
+      /data-metric="heart_rate_bpm"[\s\S]*?72 bpm/,
+    );
     assert.match(await (await h.web("/readings")).text(), />Heart Rate</);
     assert.doesNotMatch(
       await (await h.web("/users/18/readings")).text(),

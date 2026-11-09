@@ -214,7 +214,7 @@ test("one TypeScript app serves dashboard, readings API and scale sync with SQLi
       (await request("/measure", "POST", measure, true)).status,
       200,
     );
-    assert.match(await (await request("/")).text(), /73\.25 kg/);
+    assert.match(await (await request("/")).text(), /73\.3 kg/); // Overview tiles: 1 decimal.
     assert.match(await (await request("/readings")).text(), /73\.25 kg/);
     assert.match(await (await request("/readings")).text(), /Not Acknowledged/);
     const api = await handleApp(

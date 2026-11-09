@@ -15,7 +15,6 @@ import {
 import { scaleModel } from "./models.ts";
 import { handleScaleRequest, zoneTriplet, roster, screenIds } from "./scale_api.ts";
 import {
-  dashboardPage,
   escapeHtml,
   layout,
   loginPage,
@@ -24,6 +23,7 @@ import {
   userReadingsPage,
   usersPage,
 } from "./ui.ts";
+import { RANGES, overviewPage, type RangeKey } from "./overview_ui.ts";
 
 type Row = Record<string, any>;
 type Value = string | number | null;
@@ -1726,29 +1726,27 @@ export async function handleApp(
       db,
       "SELECT * FROM users WHERE active=1 ORDER BY id",
     );
-    const cards = [];
-    for (const user of users) {
-      const metrics = await observedMetrics(db, user.id);
-      const metric =
-        metrics.find(
-          (m) => m.type === Number(url.searchParams.get(`metric_${user.id}`)),
-        )?.type ?? 1;
-      cards.push({
-        user,
-        metrics,
-        metric,
-        readings: await rows(
-          db,
-          `SELECT r.*,s.label AS scale_label FROM readings r JOIN scales s ON s.id=r.scale_id
-      WHERE r.user_id=? AND ${metric === 1 ? "r.weight_value IS NOT NULL" : "EXISTS (SELECT 1 FROM json_each(r.measures_json) m WHERE json_extract(m.value,'$.type')=?)"} ORDER BY ${readingOrder} LIMIT 5`,
-          user.id,
-          ...(metric === 1 ? [] : [metric]),
-        ),
-      });
-    }
+    // Unknown or malformed query values fall back to the defaults.
+    const user =
+      users.find((u) => String(u.id) === url.searchParams.get("user")) ??
+      users[0] ??
+      null;
+    const requested = url.searchParams.get("range");
+    const range =
+      RANGES.find(([key]) => key === requested)?.[0] ?? ("3m" as RangeKey);
     return page(
       "Dashboard",
-      dashboardPage(cards, (await setting(db, "display_weight_unit")) ?? "kg"),
+      overviewPage({
+        users,
+        user,
+        rows: user
+          ? await rows(db, "SELECT * FROM readings WHERE user_id=?", user.id)
+          : [],
+        range,
+        shown: url.searchParams.getAll("show"),
+        unit: (await setting(db, "display_weight_unit")) ?? "kg",
+        now: now(),
+      }),
       "/",
     );
   }

@@ -135,42 +135,6 @@ function healthSyncStatus(row: Row): string {
     return '<span class="muted">Not Acknowledged</span>';
   return `<span class="badge">Acknowledged</span><time class="hint" datetime="${new Date(acknowledgedAt * 1000).toISOString()}">${timeLabel(acknowledgedAt)}</time>`;
 }
-export function dashboardPage(
-  cards: Array<{
-    user: Row;
-    readings: Row[];
-    metrics?: Metric[];
-    metric?: number;
-  }>,
-  unit: string,
-): string {
-  const selections = Object.fromEntries(
-    cards.map(({ user, metric = 1 }) => [`metric_${user.id}`, metric]),
-  );
-  return `<section class="page-heading"><div><h1>Dashboard</h1></div><a class="button secondary" href="/readings">View All Readings</a></section>
-  ${
-    cards.length
-      ? `<div class="cards">${cards
-          .map(
-            ({
-              user,
-              readings,
-              metrics = [METRICS[0]],
-              metric = 1,
-            }) => `<section class="card"><div class="section-heading"><div>
-    <h2><a href="/users/${e(user.id)}/readings">${e(user.name)}</a></h2></div><a href="/users/${e(user.id)}/readings">All Readings →</a></div>
-    ${metricPicker(metrics, metric, `metric_${user.id}`, selections)}
-    ${
-      readings.length
-        ? `<p class="metric">${metricLabel(readings[0], metric, unit)}</p><div class="wide"><table><thead><tr><th>When</th><th>${e(metricTitle(metric))}</th><th>Scale</th></tr></thead><tbody>
-    ${readings.map((r) => `<tr data-reading-id="${e(r.id)}"><td>${readingTime(r)}</td><td>${metricLabel(r, metric, unit)}</td><td>${e(r.scale_label)}</td></tr>`).join("")}</tbody></table></div>`
-        : '<p class="empty">No readings recorded yet.</p>'
-    }</section>`,
-          )
-          .join("")}</div>`
-      : '<section><p class="empty">No users have been added yet.</p><a class="button" href="/firmware">Add Your First Scale</a></section>'
-  }`;
-}
 export function readingsPage(
   readings: Row[],
   users: Row[],
