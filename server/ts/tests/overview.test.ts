@@ -97,9 +97,14 @@ async function harness(users = true) {
     },
   };
 }
-const tile = (html: string, label: string) => {
-  const m = new RegExp(`<article class="tile"[^>]*data-metric="${label}"[\\s\\S]*?</article>`).exec(html);
-  assert.ok(m, `tile ${label}`);
+const row = (html: string, key: string) => {
+  const m = new RegExp(`<a class="measure"[^>]*data-metric="${key}"[\\s\\S]*?</a>`).exec(html);
+  assert.ok(m, `row ${key}`);
+  return m[0];
+};
+const hero = (html: string) => {
+  const m = /<section class="weight-hero">[\s\S]*?<\/section>/.exec(html);
+  assert.ok(m, "weight header");
   return m[0];
 };
 const charts = (html: string) =>
@@ -109,7 +114,7 @@ const dots = (html: string, caption: string) => {
   assert.ok(fig, `chart ${caption}`);
   return (fig[0].match(/<circle\b/g) ?? []).length;
 };
-
+const marker = (html: string) => Number(/class="marker" style="left:([\d.]+)%"/.exec(html)?.[1]);
 test("tabs choose one user at a time and fall back to the first user", async () => {
   const h = await harness();
   try {
@@ -126,7 +131,43 @@ test("tabs choose one user at a time and fall back to the first user", async () 
   }
 });
 
-test("tiles show the latest value, the rating and the change since the previous reading", async () => {
+test("the overview leads with weight, its change and its chart", async () => {
+  const h = await harness();
+  try {
+    const t = now() - 2 * DAY;
+    await h.reading(17, t - DAY, composition(101000));
+    await h.reading(17, t, composition(100000));
+    const html = await h.page();
+    const top = hero(html);
+    assert.match(top, /<p class="hero-value">100\.0 kg<\/p>/);
+    assert.match(top, /▼ 1\.0 %/); // (100 − 101) / 101
+    assert.match(top, /since the previous weigh-in/i);
+    assert.deepEqual(charts(top), ["Weight"]);
+    assert.match(top, /<nav class="range-links"/);
+    assert.deepEqual(charts(html), ["Weight"]); // Other charts live on their own pages.
+    assert.doesNotMatch(html, /type="checkbox"|Also Chart/);
+    assert.doesNotMatch(html, /data-metric="weight_kg"/); // Weight is in the header, not a row.
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("the composition bar splits the latest weight into muscle, fat and bone", async () => {
+  const h = await harness();
+  try {
+    await h.reading(17, now() - DAY, composition(100000));
+    const html = await h.page();
+    const bar = /<div class="composition"[\s\S]*?<\/div>/.exec(html)?.[0] ?? "";
+    assert.match(bar, /class="comp muscle" style="width:66\.40%"/);
+    assert.match(bar, /class="comp fat" style="width:30\.00%"/);
+    assert.match(bar, /class="comp bone" style="width:3\.60%"/);
+    assert.match(html, /Muscle 66\.4 %[\s\S]*Fat 30\.0 %[\s\S]*Bone 3\.6 %/);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("each measurement row shows its rating and a range bar, and opens its page", async () => {
   const h = await harness();
   try {
     const t = now() - 2 * DAY;
@@ -134,24 +175,76 @@ test("tiles show the latest value, the rating and the change since the previous 
     await h.reading(17, t, composition(100000));
     await h.reading(17, t, [{ type: 11, value: 70, unit: 0 }]);
     const html = await h.page();
-    const weight = tile(html, "weight_kg");
-    assert.match(weight, /100\.0 kg/);
-    assert.match(weight, /▼ 1\.0 kg/);
-    assert.doesNotMatch(weight, /class="badge/); // Weight itself is not rated.
-    const fat = tile(html, "fat_ratio_pct");
-    assert.match(fat, /30\.0 %/);
-    assert.match(fat, /<span class="badge bad">Very High<\/span>/);
-    assert.match(tile(html, "bmi"), /30\.9[\s\S]*<span class="badge bad">Obese<\/span>/);
-    assert.match(tile(html, "water_pct"), /<span class="badge warn">Low<\/span>/);
-    assert.match(tile(html, "visceral_fat_index"), /6\.4[\s\S]*<span class="badge warn">High<\/span>/);
-    assert.match(tile(html, "metabolic_age_years"), /44 years[\s\S]*Above Your Age/);
-    assert.match(tile(html, "heart_rate_bpm"), /70 bpm[\s\S]*<span class="badge">Normal<\/span>/);
-    assert.doesNotMatch(tile(html, "heart_rate_bpm"), /[▲▼]/); // Only one heart-rate reading.
-    assert.doesNotMatch(tile(html, "muscle_mass_kg"), /class="badge/);
+    const bmi = row(html, "bmi");
+    assert.match(bmi, /href="\/\?user=17&amp;range=3m&amp;metric=bmi"/);
+    assert.match(bmi, /BMI[\s\S]*<span class="rating bad">Obese<\/span>[\s\S]*30\.9/);
+    assert.equal((bmi.match(/class="seg /g) ?? []).length, 4);
+    assert.match(bmi, /class="seg warn"[\s\S]*class="seg good"[\s\S]*class="seg warn"[\s\S]*class="seg bad"/);
+    assert.ok(Math.abs(marker(bmi) - 79.3) < 1, String(marker(bmi))); // 30.9 in the open Obese band.
+    assert.match(row(html, "fat_ratio_pct"), /30\.0 %[\s\S]*<span class="rating bad">Very High<\/span>|<span class="rating bad">Very High<\/span>[\s\S]*30\.0 %/);
+    assert.match(row(html, "water_pct"), /<span class="rating warn">Low<\/span>/);
+    const visceral = row(html, "visceral_fat_index");
+    assert.match(visceral, /6\.4/);
+    assert.match(visceral, /<span class="rating warn">High<\/span>/);
+    assert.equal((visceral.match(/class="seg /g) ?? []).length, 3);
+    assert.match(row(html, "metabolic_age_years"), /44 years[\s\S]*Above Your Age|Above Your Age[\s\S]*44 years/);
+    assert.match(row(html, "heart_rate_bpm"), /70 bpm/);
+    assert.match(row(html, "heart_rate_bpm"), /<span class="rating good">Normal<\/span>/);
+    // Unrated measurements: value only, no rating and no bar.
+    const muscle = row(html, "muscle_mass_kg");
+    assert.match(muscle, /66\.4 kg/);
+    assert.doesNotMatch(muscle, /class="rating|class="range-bar/);
     assert.doesNotMatch(html, /data-metric="189"/);
     assert.match(html, /not medical advice/i);
     assert.match(html, /Gallagher/);
     assert.match(html, /href="\/readings"/);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("a measurement page shows the verdict, the reference, a labelled bar and its chart", async () => {
+  const h = await harness();
+  try {
+    const t = now() - 2 * DAY;
+    await h.reading(17, t - DAY, composition(101000));
+    await h.reading(17, t, composition(100000));
+    const html = await h.page("?user=17&metric=fat_ratio_pct");
+    assert.match(html, /<a class="back" href="\/\?user=17&amp;range=3m">/);
+    assert.match(html, /<h1>Body Fat<\/h1>/);
+    assert.match(html, /<p class="verdict">Your body fat is in the very high range<\/p>/);
+    assert.match(html, /Reference values for men 40–59 \(Gallagher et al\. 2000\)/);
+    assert.match(html, /<p class="hero-value">30\.0 %<\/p>/);
+    assert.match(html, /▲ 0\.3 %/); // Same fat mass, lower weight: 29.7 % → 30.0 %.
+    const bar = /<div class="range-bar labelled"[\s\S]*?<\/div><\/div>/.exec(html)?.[0] ?? "";
+    for (const edge of ["11", "22", "28"]) assert.match(bar, new RegExp(`class="edge"[^>]*>${edge}<`));
+    for (const name of ["Low", "Healthy", "High", "Very High"])
+      assert.match(bar, new RegExp(`class="band-name">${name}<`));
+    assert.deepEqual(charts(html), ["Body Fat"]);
+    assert.match(html, /<rect class="band"/);
+    // The range buttons and the user tabs keep the measurement.
+    assert.match(html, /href="\/\?user=17&amp;range=1y&amp;metric=fat_ratio_pct"/);
+    assert.match(html, /href="\/\?user=18&amp;range=3m&amp;metric=fat_ratio_pct"/);
+    // Unrated measurements get a page too, without verdict or bar.
+    const muscle = await h.page("?user=17&metric=muscle_mass_kg");
+    assert.match(muscle, /<h1>Muscle Mass<\/h1>/);
+    assert.doesNotMatch(muscle, /class="verdict"|class="range-bar/);
+    assert.deepEqual(charts(muscle), ["Muscle Mass"]);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("an unknown measurement, or one without data, falls back to the overview", async () => {
+  const h = await harness();
+  try {
+    await h.reading(17, now() - DAY, composition(100000));
+    for (const query of ["?metric=bogus", "?metric=heart_rate_bpm", "?user=18&metric=fat_ratio_pct"]) {
+      const html = await h.page(query);
+      assert.doesNotMatch(html, /class="verdict"/, query);
+      assert.doesNotMatch(html, /<a class="back"/, query);
+    }
+    assert.match(await h.page("?metric=bogus"), /<section class="weight-hero">/);
   } finally {
     h.cleanup();
   }
@@ -165,35 +258,30 @@ test("a newer weight-only reading does not hide composition or heart rate", asyn
     await h.reading(17, t, [{ type: 11, value: 70, unit: 0 }]);
     await h.reading(17, t + DAY, [{ type: 1, value: 99200, unit: -3 }]);
     const html = await h.page();
-    assert.match(tile(html, "weight_kg"), /99\.2 kg/);
-    assert.match(tile(html, "heart_rate_bpm"), /70 bpm/);
-    assert.match(tile(html, "fat_ratio_pct"), /30\.0 %/);
+    assert.match(hero(html), /99\.2 kg/);
+    assert.match(row(html, "heart_rate_bpm"), /70 bpm/);
+    assert.match(row(html, "fat_ratio_pct"), /30\.0 %/);
+    assert.match(html, /<div class="composition"/);
   } finally {
     h.cleanup();
   }
 });
 
-test("weight is always charted; other charts are opt-in and only for measured metrics", async () => {
+test("a weight-only user gets the header, the chart and BMI, but no composition bar", async () => {
   const h = await harness();
   try {
-    await h.reading(17, now() - DAY, composition(100000));
-    let html = await h.page();
-    assert.deepEqual(charts(html), ["Weight"]);
-    html = await h.page("?user=17&show=fat_ratio_pct&show=heart_rate_bpm&show=bogus");
-    assert.deepEqual(charts(html), ["Weight", "Body Fat"]);
-    assert.match(html, /<rect class="band"/); // Body fat shows its healthy range.
-    // The chart toggles are a plain GET form keeping the user and range.
-    assert.match(html, /<input type="checkbox" name="show" value="fat_ratio_pct" checked/);
-    assert.match(html, /<input type="hidden" name="user" value="17">/);
-    assert.match(html, /<input type="hidden" name="range" value="3m">/);
-    assert.doesNotMatch(html, /name="show" value="heart_rate_bpm"/); // No data, no toggle.
-    assert.doesNotMatch(html, /name="show" value="weight_kg"/); // Always shown.
+    await h.reading(17, now() - DAY, [{ type: 1, value: 80000, unit: -3 }]);
+    const html = await h.page();
+    assert.match(hero(html), /80\.0 kg/);
+    assert.doesNotMatch(hero(html), /[▲▼=] /); // Only one weigh-in: no change.
+    assert.doesNotMatch(html, /<div class="composition"/);
+    assert.deepEqual([...html.matchAll(/data-metric="([^"]+)"/g)].map((m) => m[1]), ["bmi"]);
   } finally {
     h.cleanup();
   }
 });
 
-test("range buttons filter the charts and keep the user and chart choices", async () => {
+test("range buttons filter the charts and keep the user", async () => {
   const h = await harness();
   try {
     for (const age of [1, 20, 60, 200, 500])
@@ -203,12 +291,12 @@ test("range buttons filter the charts and keep the user and chart choices", asyn
     assert.equal(dots(await h.page("?range=1y"), "Weight"), 4);
     assert.equal(dots(await h.page("?range=all"), "Weight"), 5);
     assert.equal(dots(await h.page("?range=forever"), "Weight"), 3);
-    const html = await h.page("?user=17&range=1y&show=bmi");
-    assert.match(html, /href="\/\?user=17&amp;range=all&amp;show=bmi"/);
-    assert.match(html, /<a[^>]*href="\/\?user=17&amp;range=1y&amp;show=bmi"[^>]*aria-current="page"/);
-    assert.deepEqual(charts(html), ["Weight", "BMI"]);
-    // Tiles always use the latest reading, whatever the chart range.
-    assert.match(tile(await h.page("?range=1m"), "weight_kg"), /100\.0 kg/);
+    const html = await h.page("?user=17&range=1y");
+    assert.match(html, /href="\/\?user=17&amp;range=all"/);
+    assert.match(html, /<a[^>]*href="\/\?user=17&amp;range=1y"[^>]*aria-current="page"/);
+    // The header always shows the latest reading, whatever the chart range.
+    assert.match(hero(await h.page("?range=1m")), /100\.0 kg/);
+    assert.equal(dots(await h.page("?metric=bmi&range=all"), "BMI"), 5);
   } finally {
     h.cleanup();
   }
@@ -221,10 +309,11 @@ test("mass values follow the display unit", async () => {
     await h.reading(17, now() - 2 * DAY, composition(101000));
     await h.reading(17, now() - DAY, composition(100000));
     const html = await h.page();
-    assert.match(tile(html, "weight_kg"), /220\.5 lb/);
-    assert.match(tile(html, "weight_kg"), /▼ 2\.2 lb/);
-    assert.match(tile(html, "muscle_mass_kg"), /146\.4 lb/);
-    assert.match(tile(html, "fat_ratio_pct"), /30\.0 %/); // Percentages are unit-free.
+    assert.match(hero(html), /220\.5 lb/);
+    assert.match(hero(html), /▼ 1\.0 %/); // A percentage, whatever the unit.
+    assert.match(row(html, "muscle_mass_kg"), /146\.4 lb/);
+    assert.match(row(html, "fat_ratio_pct"), /30\.0 %/); // Percentages are unit-free.
+    assert.match(await h.page("?metric=muscle_mass_kg"), /<p class="hero-value">146\.4 lb<\/p>/);
   } finally {
     h.cleanup();
   }
@@ -241,11 +330,11 @@ test("empty states and malformed rows do not break the page", async () => {
   try {
     let html = await h.page("?user=18");
     assert.match(html, /No readings recorded yet/);
-    assert.doesNotMatch(html, /<svg/);
+    assert.doesNotMatch(html, /<svg|weight-hero|class="measure"/);
     await h.reading(17, now() - DAY, [{ type: 1, value: 80000, unit: -3 }], { measures_json: "{broken" });
     await h.reading(17, now() - 2 * DAY, [{ type: 1, value: 81000, unit: -3 }]);
     html = await h.page();
-    assert.match(tile(html, "weight_kg"), /81\.0 kg/);
+    assert.match(hero(html), /81\.0 kg/);
     // Unassigned readings belong to nobody's overview.
     await h.reading(null, now(), [{ type: 1, value: 50000, unit: -3 }]);
     assert.doesNotMatch(await h.page(), /50\.0 kg/);

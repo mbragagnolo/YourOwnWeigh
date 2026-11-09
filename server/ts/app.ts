@@ -1743,7 +1743,7 @@ export async function handleApp(
           ? await rows(db, "SELECT * FROM readings WHERE user_id=?", user.id)
           : [],
         range,
-        shown: url.searchParams.getAll("show"),
+        metric: url.searchParams.get("metric"),
         unit: (await setting(db, "display_weight_unit")) ?? "kg",
         now: now(),
       }),
