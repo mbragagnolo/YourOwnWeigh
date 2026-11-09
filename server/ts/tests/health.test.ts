@@ -94,8 +94,13 @@ test("BMI, visceral fat, water, heart rate and metabolic age ratings", () => {
   assert.deepEqual(rate("bmi", 27, man40, NOV_2026), { label: "Overweight", tone: "warn" });
   assert.deepEqual(rate("bmi", 18.5, man40, NOV_2026), { label: "Healthy", tone: "good" });
   assert.deepEqual(rate("bmi", 18.4, man40, NOV_2026), { label: "Underweight", tone: "warn" });
-  assert.deepEqual(rate("visceral_fat_index", 6.4, man40, NOV_2026), { label: "Healthy", tone: "good" });
-  assert.deepEqual(rate("visceral_fat_index", 13, man40, NOV_2026), { label: "High", tone: "bad" });
+  // Withings app scale (out of 20, same for both sexes): Good < 5, High 5–10, Very High above 10.
+  assert.deepEqual(rate("visceral_fat_index", 4.9, man40, NOV_2026), { label: "Good", tone: "good" });
+  assert.deepEqual(rate("visceral_fat_index", 2.4, woman35, NOV_2026), { label: "Good", tone: "good" });
+  assert.deepEqual(rate("visceral_fat_index", 5, man40, NOV_2026), { label: "High", tone: "warn" });
+  assert.deepEqual(rate("visceral_fat_index", 6.4, man40, NOV_2026), { label: "High", tone: "warn" });
+  assert.deepEqual(rate("visceral_fat_index", 10, man40, NOV_2026), { label: "High", tone: "warn" });
+  assert.deepEqual(rate("visceral_fat_index", 10.1, man40, NOV_2026), { label: "Very High", tone: "bad" });
   assert.deepEqual(rate("water_pct", 46.8, man40, NOV_2026), { label: "Low", tone: "warn" });
   assert.deepEqual(rate("water_pct", 50, woman35, NOV_2026), { label: "Healthy", tone: "good" });
   assert.deepEqual(rate("water_pct", 66, man40, NOV_2026), { label: "High", tone: "warn" });

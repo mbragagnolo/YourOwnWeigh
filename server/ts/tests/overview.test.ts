@@ -143,7 +143,7 @@ test("tiles show the latest value, the rating and the change since the previous 
     assert.match(fat, /<span class="badge bad">Very High<\/span>/);
     assert.match(tile(html, "bmi"), /30\.9[\s\S]*<span class="badge bad">Obese<\/span>/);
     assert.match(tile(html, "water_pct"), /<span class="badge warn">Low<\/span>/);
-    assert.match(tile(html, "visceral_fat_index"), /6\.4[\s\S]*<span class="badge">Healthy<\/span>/);
+    assert.match(tile(html, "visceral_fat_index"), /6\.4[\s\S]*<span class="badge warn">High<\/span>/);
     assert.match(tile(html, "metabolic_age_years"), /44 years[\s\S]*Above Your Age/);
     assert.match(tile(html, "heart_rate_bpm"), /70 bpm[\s\S]*<span class="badge">Normal<\/span>/);
     assert.doesNotMatch(tile(html, "heart_rate_bpm"), /[▲▼]/); // Only one heart-rate reading.

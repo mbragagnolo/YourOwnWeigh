@@ -42,7 +42,7 @@ export const REFERENCE_NOTES = [
   "Body fat: Gallagher et al. 2000, healthy ranges by sex and age (20–79).",
   "BMI: World Health Organization adult categories.",
   "Body water: commonly cited adult ranges (men 50–65 %, women 45–60 %).",
-  "Visceral fat: common scale index convention (1–12 healthy).",
+  "Visceral fat: the Withings app scale, out of 20 for everyone (under 5 good, 5–10 high, above 10 very high).",
   "Heart rate: American Heart Association adult resting range (60–100 bpm).",
   "Metabolic age: compared with your age.",
 ];
@@ -157,9 +157,10 @@ export function rate(
       if (value < 30) return { label: "Overweight", tone: "warn" };
       return { label: "Obese", tone: "bad" };
     case "visceral_fat_index":
-      return value < 13
-        ? { label: "Healthy", tone: "good" }
-        : { label: "High", tone: "bad" };
+      // Withings app scale, out of 20 and the same for both sexes.
+      if (value < 5) return { label: "Good", tone: "good" };
+      if (value <= 10) return { label: "High", tone: "warn" };
+      return { label: "Very High", tone: "bad" };
     case "water_pct": {
       const range = WATER[profile.sex];
       if (!range) return null;
