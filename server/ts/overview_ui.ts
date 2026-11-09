@@ -57,7 +57,7 @@ function delta(change: number, decimals: number, suffix: string, since: string) 
   const zero = Number(shown) === 0;
   const arrow = zero ? "=" : change > 0 ? "▲" : "▼";
   const words = zero ? "no change" : `${change > 0 ? "up" : "down"} ${shown}${suffix}`;
-  return `<span class="delta" aria-label="${e(words)} ${e(since)}">${arrow} ${e(shown)}${e(suffix)}</span> <span class="hint">${e(since)}</span>`;
+  return `<span class="delta" aria-label="${e(words)} ${e(since)}">${arrow} ${e(shown)}${e(suffix)}</span> <span class="since">${e(since)}</span>`;
 }
 const query = (user: number, range: string, metric?: string) =>
   `/?${new URLSearchParams([
