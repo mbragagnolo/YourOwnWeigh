@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import {
   OVERVIEW,
   ageAt,
+  compositionOf,
+  markerPosition,
+  scaleFor,
+  verdict,
   healthyBand,
   latest,
   rate,
@@ -185,4 +189,84 @@ test("overview metrics are ordered, unique and say how they are displayed", () =
   for (const key of ["bmi", "fat_ratio_pct", "water_pct", "heart_rate_bpm", "visceral_fat_index"])
     assert.ok(keys.includes(key), key);
   for (const m of OVERVIEW) assert.ok(["mass", "percent", "plain"].includes(m.kind), m.key);
+});
+
+test("scales give each rated metric its band edges, names and reference basis", () => {
+  const fat = scaleFor("fat_ratio_pct", man40, NOV_2026)!;
+  assert.deepEqual(fat.edges, [11, 22, 28]);
+  assert.deepEqual(fat.bands.map((b) => b.label), ["Low", "Healthy", "High", "Very High"]);
+  assert.match(fat.basis, /men 40–59/);
+  assert.match(fat.basis, /Gallagher/);
+  assert.match(scaleFor("fat_ratio_pct", woman35, NOV_2026)!.basis, /women 20–39/);
+  assert.equal(scaleFor("fat_ratio_pct", { ...man40, ageYears: 85 }, NOV_2026), null);
+  assert.deepEqual(scaleFor("bmi", man40, NOV_2026)!.edges, [18.5, 25, 30]);
+  assert.deepEqual(scaleFor("visceral_fat_index", woman35, NOV_2026)!.edges, [5, 10]);
+  assert.deepEqual(scaleFor("water_pct", man40, NOV_2026)!.edges, [50, 65]);
+  assert.match(scaleFor("water_pct", woman35, NOV_2026)!.basis, /women/);
+  assert.deepEqual(scaleFor("heart_rate_bpm", man40, NOV_2026)!.edges, [60, 100]);
+  const age = scaleFor("metabolic_age_years", man40, NOV_2026)!;
+  assert.deepEqual(age.edges, [40]);
+  assert.deepEqual(age.bands.map((b) => b.label), ["Good", "Above Your Age"]);
+  for (const key of ["weight_kg", "muscle_mass_kg", "bone_mass_kg", "basal_metabolic_rate_kcal"])
+    assert.equal(scaleFor(key, man40, NOV_2026), null, key);
+});
+
+test("ratings and scales always agree, edges included", () => {
+  const cases: Record<string, number[]> = {
+    fat_ratio_pct: [5, 11, 21.9, 22, 28, 40],
+    bmi: [17, 18.5, 24.9, 25, 30, 41],
+    visceral_fat_index: [1, 4.9, 5, 10, 10.1, 19],
+    water_pct: [40, 50, 65, 65.1],
+    heart_rate_bpm: [45, 60, 100, 101],
+    metabolic_age_years: [30, 40, 41],
+  };
+  for (const [key, values] of Object.entries(cases)) {
+    const scale = scaleFor(key, man40, NOV_2026)!;
+    for (const value of values) {
+      const position = markerPosition(scale, value);
+      const band = Math.min(scale.bands.length - 1, Math.floor(position * scale.bands.length));
+      const rating = rate(key, value, man40, NOV_2026)!;
+      assert.ok(position >= 0 && position <= 1, `${key} ${value}`);
+      // A value on an edge sits on the boundary; elsewhere the marker is inside its band.
+      if (!scale.edges.includes(value))
+        assert.equal(scale.bands[band].label, rating.label, `${key} ${value}`);
+    }
+  }
+});
+
+test("range bar markers sit proportionally inside equal-width segments", () => {
+  const bmi = scaleFor("bmi", man40, NOV_2026)!;
+  assert.equal(markerPosition(bmi, 25), 0.5);
+  assert.equal(markerPosition(bmi, 21.75), 0.375);
+  // Open outer bands take the neighbouring band's width, then pin to the end.
+  assert.ok(Math.abs(markerPosition(bmi, 30.9) - 0.795) < 1e-9);
+  assert.equal(markerPosition(bmi, 50), 1);
+  assert.equal(markerPosition(bmi, 15.25), 0.125);
+  assert.equal(markerPosition(bmi, 10), 0);
+  // One edge only (metabolic age): each side spans a quarter of the edge value.
+  const age = scaleFor("metabolic_age_years", man40, NOV_2026)!;
+  assert.equal(markerPosition(age, 40), 0.5);
+  assert.ok(Math.abs(markerPosition(age, 41) - 0.55) < 1e-9);
+});
+
+test("verdicts read as a sentence", () => {
+  assert.equal(verdict("fat_ratio_pct", "Body Fat", { label: "Very High", tone: "bad" }), "Your body fat is in the very high range");
+  assert.equal(verdict("bmi", "BMI", { label: "Obese", tone: "bad" }), "Your BMI is in the obese range");
+  assert.equal(verdict("visceral_fat_index", "Visceral Fat", { label: "Good", tone: "good" }), "Your visceral fat is in the good range");
+  assert.equal(verdict("metabolic_age_years", "Metabolic Age", { label: "Above Your Age", tone: "warn" }), "Your metabolic age is above your age");
+  assert.equal(verdict("metabolic_age_years", "Metabolic Age", { label: "Good", tone: "good" }), "Your metabolic age is at or below your age");
+});
+
+test("composition shares come from the newest reading that has muscle, fat and bone", () => {
+  const share = compositionOf([row(composition, { id: 1 })], man40)!;
+  assert.ok(Math.abs(share.muscle - (66.4 / 100) * 100) < 1e-9);
+  assert.ok(Math.abs(share.fat - (30 / 100) * 100) < 1e-9);
+  assert.ok(Math.abs(share.bone - (3.6 / 100) * 100) < 1e-9);
+  assert.equal(share.time, NOV_2026);
+  // A newer weight-only reading does not hide it.
+  const later = row([{ value: 99000, type: 1, unit: -3 }], { id: 2, meastime: NOV_2026 + 86400 });
+  assert.equal(compositionOf([row(composition, { id: 1 }), later], man40)!.time, NOV_2026);
+  const noBone = composition.filter((m) => m.type !== 88);
+  assert.equal(compositionOf([row(noBone), later], man40), null);
+  assert.equal(compositionOf([row([], { measures_json: "{bad" })], man40), null);
 });

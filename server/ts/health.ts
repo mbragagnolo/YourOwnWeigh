@@ -134,6 +134,92 @@ function fatBands(profile: Profile, time: number) {
   );
 }
 
+/** A rated metric's bands: `edges` separate `bands` (one more band than
+ * edges). With `inclusive` (for every edge, or per edge), a value on an edge
+ * belongs to the band below. */
+export type Scale = {
+  edges: number[];
+  bands: Rating[];
+  basis: string;
+  inclusive?: boolean | boolean[];
+};
+const band = (label: string, tone: Rating["tone"]): Rating => ({ label, tone });
+const SEX = ["men", "women"];
+
+/** Reference scale of a metric for this person, or null where none applies. */
+export function scaleFor(
+  key: string,
+  profile: Profile,
+  time: number,
+): Scale | null {
+  switch (key) {
+    case "fat_ratio_pct": {
+      const age = ageAt(profile, time);
+      const row =
+        age === null
+          ? undefined
+          : GALLAGHER[profile.sex]?.find(([from, to]) => age >= from && age < to);
+      if (!row) return null;
+      return {
+        edges: [...row[2]],
+        bands: [band("Low", "warn"), band("Healthy", "good"), band("High", "warn"), band("Very High", "bad")],
+        basis: `Reference values for ${SEX[profile.sex]} ${row[0]}–${row[1] - 1} (Gallagher et al. 2000)`,
+      };
+    }
+    case "bmi":
+      return {
+        edges: [18.5, 25, 30],
+        bands: [band("Underweight", "warn"), band("Healthy", "good"), band("Overweight", "warn"), band("Obese", "bad")],
+        basis: "World Health Organization adult categories",
+      };
+    case "visceral_fat_index":
+      return {
+        edges: [5, 10],
+        bands: [band("Good", "good"), band("High", "warn"), band("Very High", "bad")],
+        basis: "Withings scale out of 20, the same for everyone",
+        inclusive: [false, true], // Under 5 good, 5 to 10 high.
+      };
+    case "water_pct": {
+      const range = WATER[profile.sex];
+      if (!range) return null;
+      return {
+        edges: [...range],
+        bands: [band("Low", "warn"), band("Healthy", "good"), band("High", "warn")],
+        basis: `Commonly cited adult range for ${SEX[profile.sex]}`,
+        inclusive: true,
+      };
+    }
+    case "heart_rate_bpm":
+      return {
+        edges: [60, 100],
+        bands: [band("Low", "warn"), band("Normal", "good"), band("High", "warn")],
+        basis: "American Heart Association adult resting range",
+        inclusive: true,
+      };
+    case "metabolic_age_years": {
+      const age = ageAt(profile, time);
+      if (age === null) return null;
+      return {
+        edges: [age],
+        bands: [band("Good", "good"), band("Above Your Age", "warn")],
+        basis: `Compared with your age (${age})`,
+        inclusive: true,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+function bandIndex(scale: Scale, value: number): number {
+  const i = scale.edges.findIndex((edge, j) =>
+    (Array.isArray(scale.inclusive) ? scale.inclusive[j] : scale.inclusive)
+      ? value <= edge
+      : value < edge,
+  );
+  return i === -1 ? scale.edges.length : i;
+}
+
 /** Reference rating of a value, or null where no reference applies. */
 export function rate(
   key: string,
@@ -141,47 +227,67 @@ export function rate(
   profile: Profile,
   time: number,
 ): Rating | null {
-  switch (key) {
-    case "fat_ratio_pct": {
-      const bands = fatBands(profile, time);
-      if (!bands) return null;
-      const [healthy, high, veryHigh] = bands;
-      if (value < healthy) return { label: "Low", tone: "warn" };
-      if (value < high) return { label: "Healthy", tone: "good" };
-      if (value < veryHigh) return { label: "High", tone: "warn" };
-      return { label: "Very High", tone: "bad" };
+  const scale = scaleFor(key, profile, time);
+  return scale ? scale.bands[bandIndex(scale, value)] : null;
+}
+
+/** Where a value sits on an equal-width range bar, 0 (left) to 1 (right).
+ * Open outer bands take their neighbour's width (a quarter of the edge with
+ * a single edge) and pin values beyond it to the end. */
+export function markerPosition(scale: Scale, value: number): number {
+  const { edges } = scale;
+  const n = edges.length + 1;
+  const i = bandIndex(scale, value);
+  const width = (edges.length > 1
+    ? i === 0
+      ? edges[1] - edges[0]
+      : edges[edges.length - 1] - edges[edges.length - 2]
+    : Math.abs(edges[0]) / 4) || 1;
+  const low = i === 0 ? edges[0] - width : edges[i - 1];
+  const high = i === edges.length ? edges[i - 1] + width : edges[i];
+  const within = Math.min(1, Math.max(0, (value - low) / (high - low)));
+  return (i + within) / n;
+}
+
+/** One-line verdict for a rated value, e.g. "Your BMI is in the obese range". */
+export function verdict(key: string, label: string, rating: Rating): string {
+  const name = label === "BMI" ? label : label.toLowerCase();
+  if (key === "metabolic_age_years")
+    return rating.tone === "good"
+      ? `Your ${name} is at or below your age`
+      : `Your ${name} is above your age`;
+  return `Your ${name} is in the ${rating.label.toLowerCase()} range`;
+}
+
+/** Muscle, fat and bone as % of weight, from the newest reading with all three. */
+export function compositionOf(
+  rows: Record<string, any>[],
+  profile: Profile,
+): { muscle: number; fat: number; bone: number; time: number } | null {
+  let best: { muscle: number; fat: number; bone: number; time: number } | null = null;
+  for (const row of rows) {
+    let v: Record<string, number>;
+    try {
+      v = readingValues(row, profile);
+    } catch {
+      continue;
     }
-    case "bmi":
-      if (value < 18.5) return { label: "Underweight", tone: "warn" };
-      if (value < 25) return { label: "Healthy", tone: "good" };
-      if (value < 30) return { label: "Overweight", tone: "warn" };
-      return { label: "Obese", tone: "bad" };
-    case "visceral_fat_index":
-      // Withings app scale, out of 20 and the same for both sexes.
-      if (value < 5) return { label: "Good", tone: "good" };
-      if (value <= 10) return { label: "High", tone: "warn" };
-      return { label: "Very High", tone: "bad" };
-    case "water_pct": {
-      const range = WATER[profile.sex];
-      if (!range) return null;
-      if (value < range[0]) return { label: "Low", tone: "warn" };
-      if (value <= range[1]) return { label: "Healthy", tone: "good" };
-      return { label: "High", tone: "warn" };
-    }
-    case "heart_rate_bpm":
-      if (value < 60) return { label: "Low", tone: "warn" };
-      if (value <= 100) return { label: "Normal", tone: "good" };
-      return { label: "High", tone: "warn" };
-    case "metabolic_age_years": {
-      const age = ageAt(profile, time);
-      if (age === null) return null;
-      return value <= age
-        ? { label: "Good", tone: "good" }
-        : { label: "Above Your Age", tone: "warn" };
-    }
-    default:
-      return null;
+    const time = readingTime(row);
+    if (
+      v.weight_kg > 0 &&
+      v.muscle_mass_kg !== undefined &&
+      v.fat_mass_kg !== undefined &&
+      v.bone_mass_kg !== undefined &&
+      (!best || time > best.time)
+    )
+      best = {
+        muscle: (v.muscle_mass_kg / v.weight_kg) * 100,
+        fat: (v.fat_mass_kg / v.weight_kg) * 100,
+        bone: (v.bone_mass_kg / v.weight_kg) * 100,
+        time,
+      };
   }
+  return best;
 }
 
 /** Healthy range to shade behind a chart; the same figures as rate(). */
