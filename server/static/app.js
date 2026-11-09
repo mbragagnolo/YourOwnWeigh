@@ -89,11 +89,47 @@ document.querySelectorAll("[data-toggle]").forEach((toggle) => {
   refresh();
 });
 
-// Metric pickers remain ordinary GET forms when JavaScript is unavailable.
+// Metric pickers and chart toggles remain ordinary GET forms without JavaScript.
 document.addEventListener("change", (event) => {
   if (
-    event.target instanceof HTMLSelectElement &&
+    (event.target instanceof HTMLSelectElement ||
+      event.target instanceof HTMLInputElement) &&
     event.target.matches("[data-submit-on-change]")
   )
     event.target.form.requestSubmit();
 });
+
+// Chart markers: one styled tooltip instead of the native <title>, which
+// stays in the markup for when JavaScript is unavailable.
+document.querySelectorAll(".chart-svg .dot").forEach((dot) => {
+  dot.querySelector("title")?.remove();
+  dot.setAttribute("tabindex", "0");
+  dot.setAttribute("aria-label", dot.dataset.tip);
+});
+const showTip = (dot) => {
+  const figure = dot.closest(".chart");
+  if (!figure) return;
+  const tip =
+    figure.querySelector(".chart-tip") ||
+    figure.appendChild(Object.assign(document.createElement("div"), { className: "chart-tip" }));
+  const box = dot.getBoundingClientRect(),
+    frame = figure.getBoundingClientRect();
+  tip.textContent = dot.dataset.tip;
+  tip.style.left = `${box.left + box.width / 2 - frame.left}px`;
+  tip.style.top = `${box.top - frame.top}px`;
+  tip.hidden = false;
+};
+const hideTip = (dot) => {
+  const tip = dot.closest(".chart")?.querySelector(".chart-tip");
+  if (tip) tip.hidden = true;
+};
+for (const [show, hide] of [["pointerover", "pointerout"], ["focusin", "focusout"]]) {
+  document.addEventListener(show, (event) => {
+    const dot = event.target.closest?.(".chart-svg .dot");
+    if (dot) showTip(dot);
+  });
+  document.addEventListener(hide, (event) => {
+    const dot = event.target.closest?.(".chart-svg .dot");
+    if (dot) hideTip(dot);
+  });
+}
