@@ -63,7 +63,7 @@ Enrollment accepts only own entries in the shared model registry, not inherited 
 
 Timezone arithmetic lives in TypeScript. The browser provides an IANA timezone; the server calculates UTC/current offset/next transition/next offset for both Wi-Fi responses and Bluetooth provisioning. Shared fixtures in `contracts/time/v1/` test boundary behavior and Python's wire encoding.
 
-Scale settings delivery is reported as saved or sent, never device-confirmed. Imported WBS06 roster-member edits can be queued; people skipped during enrollment stay on the scale. New local-only WBS06 profiles and WS-30 roster writes are not implemented. Captured screen/summary responses are currently replayed; weather is not a live forecast integration.
+Scale settings delivery is reported as saved or sent, never device-confirmed. Imported WBS06 roster-member edits can be queued; people skipped during enrollment stay on the scale. New local-only WBS06 profiles and WS-30 roster writes are not implemented. Captured screen/summary responses are currently replayed. Weather is suppressed, except on Body Smart (WBS13): setting `YOW_WEATHER_LATITUDE` and `YOW_WEATHER_LONGITUDE` adds its weather screen and serves a live forecast from api.open-meteo.com (coordinates rounded to two decimals; confirmed on hardware). `YOW_WBS13_SCREENS` chooses and orders its result pages from `bmi`, `fat`, `muscle`, `water`, `bone`, `visceral`, `heart`, `weather` and `air`; `air` adds the European AQI from air-quality-api.open-meteo.com.
 
 **WBS13 / Body Smart v100** uses local users instead of the older
 models' Withings import. Import its Bluetooth device record, then choose up to

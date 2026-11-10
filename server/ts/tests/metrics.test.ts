@@ -361,7 +361,12 @@ test("WBS13 authenticates, receives its local roster every session and stores mi
     const common = { sessionid: session };
     for (const [path, action, extra, body] of [
       ["/v2/summary", "getforscale", {}, []],
-      ["/v2/measure", "getlastupdate", { objects: "devices" }, { devices: [] }],
+      [
+        "/v2/measure",
+        "getlastupdate",
+        { objects: "devices" },
+        { devices: [{ screen: 353749227, screencontent: 1 }] },
+      ],
       [
         "/v2/feature",
         "getbydevice",

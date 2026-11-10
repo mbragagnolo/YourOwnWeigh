@@ -3,6 +3,13 @@ import { ws30MD5 } from "./ws30_md5.ts";
 import { scaleModel } from "./models.ts";
 import { validateMetricJson } from "./metrics.ts";
 import {
+  forecast,
+  wantsAir,
+  wbs13Screens,
+  weatherPlace,
+  type WeatherEnv,
+} from "./weather.ts";
+import {
   backfillRecognitionWeights,
   refreshRecognitionWeight,
 } from "./recognition.ts";
@@ -11,7 +18,7 @@ import {
   sessionFirmware,
 } from "./firmware_observation.ts";
 
-interface ScaleEnv {
+interface ScaleEnv extends WeatherEnv {
   DB: D1Database;
 }
 
@@ -316,7 +323,12 @@ export async function roster(
         cr: u.reference_weight_at ?? u.created_at,
         att: 0,
         // Body+ has weight/composition screens, but no heart-rate sensor.
-        cs: composition ? (scale.model === "WBS05" ? "2,1" : "2,1,3") : "2",
+        cs:
+          scale.model === "WBS13"
+            ? wbs13Screens(env, composition)
+            : composition
+              ? "2,1"
+              : "2",
       };
     });
   }
@@ -587,6 +599,9 @@ async function newSession(
       w: scale.weight_code,
     };
   if (users) body.sp = { users };
+  // Start the forecast lookup now so it is cached when the scale asks for it.
+  const place = scale.model === "WBS13" ? weatherPlace(env) : null;
+  if (place) void forecast(env, place, scale.time_zone, wantsAir(env));
   return json({ status: 0, body });
 }
 
@@ -656,7 +671,16 @@ async function fixture(
     // Build display settings from this model's roster screen IDs. Body Cardio
     // preserves imported screen selections; local rosters supply their own.
     if (endpoint === "weather") {
-      await audit(env.DB, scale.id, endpoint, "suppressed").run();
+      const place = scale.model === "WBS13" ? weatherPlace(env) : null;
+      const series = place
+        ? await forecast(env, place, scale.time_zone, wantsAir(env))
+        : null;
+      if (series) {
+        await audit(env.DB, scale.id, endpoint, "served").run();
+        return json({ status: 0, body: { series } });
+      }
+      // An empty reply leaves the forecast already stored on the scale alone.
+      await audit(env.DB, scale.id, endpoint, place ? "unavailable" : "suppressed").run();
       return json({ status: 0, body: scale.model === "WBS05" ? { series: [] } : {} });
     }
     let body: object = endpoint === "summary" ? [] : {};
@@ -1092,6 +1116,30 @@ async function measure(
   return json({ status: 0 });
 }
 
+/** A version stamp for the roster's screen lists. Over Wi-Fi the WBS13 keeps
+ * an existing user's stored screens and ignores a changed session `cs`
+ * (`0x08047814`); it refetches `/v2/screen` only when `devices[].screen` or
+ * `screencontent` here differs from the pair it cached (`0x0802608A`). The
+ * stamp therefore changes exactly when the screen selection does. */
+export async function screenUpdate(
+  env: ScaleEnv,
+  scale: ScaleRow,
+): Promise<object[]> {
+  let users: Array<{ id?: unknown; cs?: unknown }>;
+  try {
+    users = await roster(env, scale);
+  } catch {
+    return []; // No roster chosen yet: nothing to refresh.
+  }
+  let hash = 0x811c9dc5; // FNV-1a over "id:cs;" per user.
+  for (const ch of users.map((u) => `${u.id}:${u.cs};`).join("")) {
+    hash ^= ch.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  // Never 0xFFFFFFFF, the scale's own "no value" default.
+  return [{ screen: (hash % 0x7ffffffe) + 1, screencontent: 1 }];
+}
+
 /** Minimal update/feature replies qualified by the WBS13 HTTP capture. */
 async function wbs13Query(
   env: ScaleEnv,
@@ -1107,7 +1155,7 @@ async function wbs13Query(
     action === "getlastupdate" &&
     params.get("objects") === "devices"
   )
-    body = { devices: [] };
+    body = { devices: await screenUpdate(env, scale) };
   else if (path === "/v2/feature" && action === "getbydevice")
     body = { device_features: [], user_features: [] };
   else if (path === "/v2/screen" && action === "getcontentbydeviceid")

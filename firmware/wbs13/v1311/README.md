@@ -660,6 +660,82 @@ recognised weigh-in containing body composition and heart rate. That run did
 not request `/v2/screen`, so the separate screen-response path remains verified
 offline only.
 
+### Embedded Screen IDs
+
+The dispatcher at `0x0805F048` maps a screen entry's source and ID to a screen
+descriptor. For source `1` (embedded, the `embid` values in `cs`):
+
+| ID | Screen | ID | Screen |
+| --- | --- | --- | --- |
+| 1 | Fat mass | 14 | Water |
+| 2 | BMI | 15 | Bone |
+| 3 | Heart rate | 16 | Muscle |
+| 6 | Weight (descriptor `weight`) | 18 | Vascular age |
+| 8 | Steps | 21 | Air quality |
+| 10 | Weather | 22 | Visceral fat |
+| 12 | Pulse wave velocity | 19, 23 | Conditional on a runtime flag |
+
+Other IDs up to 23 log "Screen %u not implemented". Source `4` selects
+pregnancy, stars, streak, walking, cycling, fire and lightning screens (IDs 1
+and 4 to 9). This table is read from the image; only 1, 2 and 3 have been
+exercised on hardware, and a descriptor does not prove the model has the sensor.
+
+### Changing An Existing User's Screens
+
+A changed `sp.users[].cs` does not reach an existing user over Wi-Fi.
+`WsLib_StartSession` calls the apply routine `0x08047568` with flag `0`, and at
+`0x08047814` that flag makes it copy the stored 128-byte screen list over the
+newly parsed one for every user ID already in the table. Only new users take
+their screens from `cs`.
+
+Screens are refreshed through `/v2/screen` instead. The sync helper
+`0x0802606C` reads `body.devices[].screen` and `screencontent` (both u32,
+default `0xFFFFFFFF` when `devices` is empty) from `/v2/measure`
+`getlastupdate`, and requests `getbydeviceid` and `getcontentbydeviceid` only
+when either differs from the pair cached in RAM. A constant reply therefore
+freezes the screens after the first fetch. The server now derives `screen`
+from the roster's screen lists, so the value changes when the selection does.
+A live sync log matched this: one `/v2/screen` request on first contact, none
+afterwards, and no `/v2/weather` request after screen 10 was added to `cs`.
+
+### Weather Screen
+
+Static analysis of stock 1311. A v103 unit showed the weather page after the
+server listed screen 10 and served this reply; air quality is not yet confirmed.
+
+- **Trigger:** `0x08075D14` walks the user table and calls the fetch routine
+  `0x08048140` only when a user lists source-1 screen `10` (weather) or `21`
+  (air quality), or feature `0x31` is set. Without one of them the scale never
+  requests `/v2/weather`.
+- **Request:** `action=getforecast&sessionid=%s&short=1&enrich=t&airquality=1`.
+- **Reply:** parser table `0x08080404`: `body.series.w[]` entries with `ti`
+  (u32 epoch seconds), `te` (number, truncated to a signed 16-bit whole degree)
+  and `ic` (u8 icon); `body.series.aq[]` entries with `ti` and `aqi`. Entries
+  are merged by `ti` into eight slots (`0x0807555E`) and stored as DBLIB item
+  `0x7E` (`0x48` bytes: eight times, temperatures, AQI values and icons). An
+  empty reply stores nothing and leaves the existing item.
+- **Display:** `0x0803C420` floors the clock to the hour and looks for slots at
+  06:00 and 12:00 of the current day, or of the next day once the hour exceeds
+  18. They are drawn as "AM" and "PM". If neither is found the screen is
+  skipped ("Skip weather"). The hour comes from `localtime_r` on the scale's
+  clock; whether that reflects UTC or the session offset is not established,
+  so the server supplies each forecast under both readings.
+- **Units and icons:** `te` is Celsius; unit settings `2` and `7` convert with
+  `te * 18 / 10 + 32`. `ic` values 1 to 5 index the table at `0x08082104`; any
+  other value draws the image at `0x08083464`. From the bitmaps: 1 sun, 3
+  cloud, 4 sun behind cloud, fallback cloud with rain. 5 appears to be
+  lightning and 2 is unidentified.
+
+- **Air quality:** screen `21` (`0x08061CC4`) takes the `aqi` of the same AM
+  and PM slots as signed 16-bit values, averages those that are not negative
+  and skips the page ("Skip AQI") when both are. The gauge has steps at 20, 50
+  and 100 and is capped at 200. A weather-only reply leaves `aqi` at zero, so
+  the server sends `65535` for a slot without a reading. The steps match the
+  first band of the European AQI, which the server sends unconverted.
+
+The server implements this in [`weather.ts`](../../../server/ts/weather.ts)
+when `YOW_WEATHER_LATITUDE` and `YOW_WEATHER_LONGITUDE` are set.
+
 ## Next Experiments
 
 1. **Configuration persistence:** check configured hostname/SSID readback after a

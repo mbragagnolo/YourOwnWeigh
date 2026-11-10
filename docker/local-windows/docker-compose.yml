@@ -23,6 +23,15 @@ services:
       YOW_SCALE_PORT: "8081"
       YOW_SCALE_HOST: 0.0.0.0
       YOW_SCALE_PROXY_HOST: yow:8081
+      # Optional: Body Smart weather screen. Set both in .env to enable it. The
+      # server then asks api.open-meteo.com for a forecast (coordinates rounded
+      # to ~1 km) when the scale syncs: the only outbound call in normal use.
+      YOW_WEATHER_LATITUDE: ${YOW_WEATHER_LATITUDE:-}
+      YOW_WEATHER_LONGITUDE: ${YOW_WEATHER_LONGITUDE:-}
+      # Optional: Body Smart result pages, in order. Names: bmi, fat, muscle,
+      # water, bone, visceral, heart, weather, air. Unset keeps bmi, fat and
+      # heart (plus weather when a place is set). Each page shows for about 3 s.
+      YOW_WBS13_SCREENS: ${YOW_WBS13_SCREENS:-}
     volumes:
       - yow-data:/data            # SQLite DB + first-run bootstrap token
     # No published port: the image sets YOW_TRUST_PROXY=1, which treats a

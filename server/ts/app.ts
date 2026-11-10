@@ -38,6 +38,11 @@ export interface AppEnv {
   YOW_BOOTSTRAP_TOKEN?: string;
   captureWithings?: (scale: Row) => Promise<string>;
   lookupFirmwareOffer?: (identity: Row) => Promise<Row>;
+  /** Place for the Body Smart weather screen; unset disables the forecast. */
+  YOW_WBS13_SCREENS?: string;
+  YOW_WEATHER_LATITUDE?: string;
+  YOW_WEATHER_LONGITUDE?: string;
+  weatherFetch?: typeof fetch;
 }
 const SCALE_PATHS = new Set([
   "/once",
