@@ -147,6 +147,9 @@ export class LocalSqlite {
         "utf8",
       ),
     );
+    this.database.exec(
+      readFileSync(join(ROOT, "server/migrations/0011_watch_data.sql"), "utf8"),
+    );
   }
   private upgradeOlderDatabase(): void {
     const columns = (table: string): Set<string> =>

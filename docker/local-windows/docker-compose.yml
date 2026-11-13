@@ -32,8 +32,11 @@ services:
       # water, bone, visceral, heart, weather, air. Unset keeps bmi, fat and
       # heart (plus weather when a place is set). Each page shows for about 3 s.
       YOW_WBS13_SCREENS: ${YOW_WBS13_SCREENS:-}
+      # Garmin watch FIT files, copied in by connectors/Garmin/sync_watch.ps1.
+      YOW_WATCH_INBOX: /watch-inbox
     volumes:
       - yow-data:/data            # SQLite DB + first-run bootstrap token
+      - ./watch-inbox:/watch-inbox:ro
     # No published port: the image sets YOW_TRUST_PROXY=1, which treats a
     # request without X-Forwarded-Proto as https. The dashboard therefore goes
     # through caddy, which sends X-Forwarded-Proto: http (else the bridge page's

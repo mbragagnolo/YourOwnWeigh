@@ -444,7 +444,10 @@ export async function commitBackup(
     ])
       statements.push(db.prepare(`DELETE FROM ${table}`));
     statements.push(
-      db.prepare("DELETE FROM settings WHERE key='display_weight_unit'"),
+      // Goal plans are keyed by user ID, which a replacement reassigns.
+      db.prepare(
+        "DELETE FROM settings WHERE key IN ('display_weight_unit','goal_plans')",
+      ),
     );
   }
   // Rows refer to source IDs; resolve them inside the same final transaction.

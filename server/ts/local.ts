@@ -2,6 +2,7 @@
  * Scale-facing fixed ports are forwarded by the documented reverse proxy.
  * Never run Node as root. All persistent development/deployment data is local/.
  */
+import { watchInbox } from "./watch_inbox.ts";
 import { createServer as createHttpsServer } from "node:https";
 import {
   createServer as createHttpServer,
@@ -258,6 +259,10 @@ export async function startLocal() {
       )
     : createHttpServer(listener);
   bridge.attach(server, env, secure, allowedHosts, trustProxy);
+  // Optional: Garmin watch FIT files copied in by the Windows sync script.
+  const stopWatchInbox = config.YOW_WATCH_INBOX
+    ? watchInbox(env.DB, config.YOW_WATCH_INBOX)
+    : undefined;
   server.listen(port, host, () => {
     console.log(`YourOwnWeigh: ${origin.origin}`);
     if (!initialized) console.log(`First-run bootstrap token: ${bootstrap}`);
@@ -281,6 +286,7 @@ export async function startLocal() {
     );
   }
   const close = () => {
+    stopWatchInbox?.();
     server.close();
     scaleServer?.close();
     bridge.sockets.close();

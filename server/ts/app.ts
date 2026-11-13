@@ -24,6 +24,8 @@ import {
   usersPage,
 } from "./ui.ts";
 import { RANGES, overviewPage, type RangeKey } from "./overview_ui.ts";
+import { GOAL_RANGES, goalsPage, type GoalRangeKey } from "./goals_ui.ts";
+import { dateTime, dayKey, parsePlans, planFromForm } from "./goals.ts";
 
 type Row = Record<string, any>;
 type Value = string | number | null;
@@ -1486,6 +1488,38 @@ async function integratedApi(request: Request, env: AppEnv): Promise<Response> {
   return json({ error: "Not found" }, 404);
 }
 
+/** A user's linked watches, the others, and their daily series. Steps leave
+ * out today, which is still counting. */
+async function watchInfo(db: D1Database, userId: number, at: number) {
+  const devices = await rows(
+    db,
+    "SELECT serial,product,user_id,last_import_at FROM watch_devices ORDER BY first_seen_at",
+  );
+  const linked = devices.filter((d) => Number(d.user_id) === userId);
+  const unlinked = devices.filter((d) => Number(d.user_id) !== userId);
+  const series: Record<string, Array<{ readingId: number; time: number; value: number }>> = {};
+  if (linked.length) {
+    const owned = "SELECT serial FROM watch_devices WHERE user_id=?";
+    const add = (key: string, day: string, value: number) => {
+      const time = dateTime(day);
+      if (time !== null) (series[key] ??= []).push({ readingId: 0, time, value });
+    };
+    for (const r of await rows(
+      db,
+      `SELECT day,metric,AVG(value) AS value FROM watch_daily WHERE serial IN (${owned}) GROUP BY day,metric ORDER BY day`,
+      userId,
+    ))
+      add(r.metric === "resting_hr" ? "resting_hr_bpm" : r.metric, r.day, Number(r.value));
+    for (const r of await rows(
+      db,
+      `SELECT day,SUM(steps) AS steps FROM watch_steps WHERE serial IN (${owned}) AND day<? GROUP BY day ORDER BY day`,
+      userId,
+      dayKey(at, "UTC"),
+    ))
+      add("steps", r.day, Number(r.steps));
+  }
+  return { linked, unlinked, series };
+}
 export async function handleApp(
   request: Request,
   env: AppEnv,
@@ -1753,6 +1787,38 @@ export async function handleApp(
         now: now(),
       }),
       "/",
+    );
+  }
+  if (path === "/goals") {
+    const users = await rows(
+      db,
+      "SELECT * FROM users WHERE active=1 ORDER BY id",
+    );
+    const user =
+      users.find((u) => String(u.id) === url.searchParams.get("user")) ??
+      users[0] ??
+      null;
+    const requested = url.searchParams.get("range");
+    const range =
+      GOAL_RANGES.find(([key]) => key === requested)?.[0] ??
+      ("3m" as GoalRangeKey);
+    const plans = parsePlans(await setting(db, "goal_plans"));
+    return page(
+      "Goals",
+      goalsPage({
+        users,
+        user,
+        rows: user
+          ? await rows(db, "SELECT * FROM readings WHERE user_id=?", user.id)
+          : [],
+        plan: user ? (plans[String(user.id)] ?? null) : null,
+        watch: user ? await watchInfo(db, Number(user.id), now()) : undefined,
+        range,
+        unit: (await setting(db, "display_weight_unit")) ?? "kg",
+        now: now(),
+        csrf,
+      }),
+      "/goals",
     );
   }
   if (path === "/readings") {
@@ -2148,6 +2214,46 @@ async function browserPost(
         saveSetting(db, "sync_password_mode", "separate"),
       ]);
       return go("/settings", "Readings API password set");
+    }
+    if (path === "/goals") {
+      const userId = formText(form, "user");
+      if (
+        !/^\d+$/.test(userId) ||
+        !(await one(db, "SELECT id FROM users WHERE id=?", Number(userId)))
+      )
+        throw new Error("Unknown user");
+      const back = `/goals?user=${userId}`;
+      let plan;
+      try {
+        plan = planFromForm((name) => formText(form, name));
+      } catch (error) {
+        return go(back, safeError(error));
+      }
+      const plans = parsePlans(await setting(db, "goal_plans"));
+      if (plan) plans[userId] = plan;
+      else delete plans[userId];
+      await db.batch([saveSetting(db, "goal_plans", JSON.stringify(plans))]);
+      return go(back, plan ? "Plan saved" : "Plan removed");
+    }
+    if (path === "/goals/watch") {
+      const userId = formText(form, "user");
+      const serial = formText(form, "serial");
+      if (
+        !/^\d+$/.test(userId) ||
+        !(await one(db, "SELECT id FROM users WHERE id=?", Number(userId))) ||
+        !(await one(db, "SELECT serial FROM watch_devices WHERE serial=?", serial))
+      )
+        throw new Error("Unknown user or watch");
+      const link = formText(form, "link") === "1";
+      await run(
+        db,
+        link
+          ? "UPDATE watch_devices SET user_id=? WHERE serial=?"
+          : "UPDATE watch_devices SET user_id=NULL WHERE user_id=? AND serial=?",
+        Number(userId),
+        serial,
+      );
+      return go(`/goals?user=${userId}`, link ? "Watch linked" : "Watch unlinked");
     }
     if (path === "/preferences") {
       const unit = formText(form, "weight_unit");
@@ -2706,7 +2812,9 @@ async function browserPost(
         ? "/users"
         : path.startsWith("/readings")
           ? "/readings"
-          : path;
+          : path.startsWith("/goals")
+            ? "/goals"
+            : path;
     return go(destination, safeError(error));
   }
 }

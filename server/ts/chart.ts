@@ -11,6 +11,8 @@ export type ChartOptions = {
   to: number;
   format: (value: number) => string;
   band?: { low: number; high: number } | null;
+  /** Extra unmarked lines (trend, target), drawn under the readings. */
+  lines?: Array<{ className: string; points: Array<{ time: number; value: number }> }>;
 };
 
 const W = 640,
@@ -38,10 +40,17 @@ export function lineChart(options: ChartOptions): string {
 
   // Vertical domain: the data plus the healthy band, padded so nothing touches
   // the edges; a flat series gets a small fixed span instead of dividing by 0.
+  const lines = (options.lines ?? []).map((l) => ({
+    ...l,
+    points: l.points
+      .filter((p) => p.time >= from && p.time <= to && Number.isFinite(p.value))
+      .sort((a, b) => a.time - b.time),
+  }));
   const values = points.map((p) => p.value);
+  const lineValues = lines.flatMap((l) => l.points.map((p) => p.value));
   const edges = band ? [band.low, band.high] : [];
-  let lo = Math.min(...values, ...edges),
-    hi = Math.max(...values, ...edges);
+  let lo = Math.min(...values, ...lineValues, ...edges),
+    hi = Math.max(...values, ...lineValues, ...edges);
   if (hi - lo < 1e-9) {
     const pad = Math.max(1, Math.abs(hi) * 0.02);
     lo -= pad;
@@ -73,6 +82,13 @@ export function lineChart(options: ChartOptions): string {
   const shaded = band
     ? `<rect class="band" x="${LEFT}" y="${y(band.high)}" width="${plotW}" height="${r1(y(band.low) - y(band.high))}"><title>Healthy range ${e(format(band.low))}–${e(format(band.high))}</title></rect><text class="band-label" x="${W - RIGHT - 4}" y="${r1(y(band.high) + 12)}" text-anchor="end">Healthy range</text>`
     : "";
+  const extra = lines
+    .filter((l) => l.points.length > 1)
+    .map(
+      (l) =>
+        `<polyline class="${e(l.className)}" points="${l.points.map((p) => `${x(p.time)},${y(p.value)}`).join(" ")}"/>`,
+    )
+    .join("");
   const line = `<polyline class="line" points="${points.map((p) => `${x(p.time)},${y(p.value)}`).join(" ")}"/>`;
   const dots = points
     .map(
@@ -81,5 +97,5 @@ export function lineChart(options: ChartOptions): string {
     )
     .join("");
   const dates = `<text class="axis" x="${LEFT}" y="${H - 8}">${e(dateLabel(from))}</text><text class="axis" x="${W - RIGHT}" y="${H - 8}" text-anchor="end">${e(dateLabel(to))}</text>`;
-  return `<figure class="chart">${caption}<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${e(title)} chart, ${points.length} readings">${shaded}${grid}${dates}${line}${dots}</svg></figure>`;
+  return `<figure class="chart">${caption}<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${e(title)} chart, ${points.length} readings">${shaded}${grid}${dates}${extra}${line}${dots}</svg></figure>`;
 }

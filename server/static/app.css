@@ -1195,3 +1195,138 @@ a.back {
     grid-row: 1;
   }
 }
+/* Goals: smoothed values against a milestone plan. */
+.goal-card {
+  background: #fff;
+  border: 1px solid #dfe9e9;
+  border-radius: 0.9rem;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+.goal-card h2,
+details.goal-card summary {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.goal-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.8rem;
+}
+.goal-tile {
+  border: 1px solid #edf2f2;
+  border-radius: 0.7rem;
+  padding: 0.7rem 0.8rem;
+}
+.goal-tile p {
+  margin: 0;
+}
+.goal-name {
+  font-weight: 650;
+}
+.goal-value {
+  font-size: 1.6rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.goal-target {
+  margin-top: 0.4rem !important;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.advice {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.advice li {
+  margin: 0.3rem 0;
+}
+.advice li.good::marker {
+  color: #236a4e;
+}
+.advice li.warn::marker {
+  color: #936026;
+}
+.advice li.bad::marker {
+  color: #9b302a;
+}
+.milestones td {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.milestones tr.next td {
+  background: #f4f9f9;
+}
+.goal-charts .chart {
+  margin-bottom: 0.8rem;
+}
+.goal-charts .chart-svg {
+  max-width: 48rem;
+}
+.goal-charts .chart-svg .line {
+  stroke: #9fc9c6;
+  stroke-width: 1;
+}
+.goal-charts .chart-svg .dot {
+  r: 3;
+  stroke: #6fb3ae;
+  stroke-width: 1.5;
+}
+.chart-svg .trend {
+  fill: none;
+  stroke: #087a76;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.chart-svg .target {
+  fill: none;
+  stroke: #8a7bd8;
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+.goal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.2rem;
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+}
+.key.daily::before {
+  background: #fff;
+  border: 2px solid #6fb3ae;
+  border-radius: 50%;
+}
+.key.trend::before {
+  height: 0.2rem;
+  vertical-align: 0.2rem;
+  background: #087a76;
+}
+.key.target::before {
+  height: 0;
+  vertical-align: 0.25rem;
+  border-top: 2px dashed #8a7bd8;
+}
+.goal-editor input {
+  width: 6.5rem;
+  min-width: 0;
+}
+.goal-editor input[type="date"] {
+  width: 9.5rem;
+}
+.watch-list {
+  margin: 0 0 0.4rem;
+  padding: 0;
+  list-style: none;
+}
+.watch-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+  padding: 0.3rem 0;
+}
+.watch-list form {
+  display: inline;
+  margin: 0;
+}

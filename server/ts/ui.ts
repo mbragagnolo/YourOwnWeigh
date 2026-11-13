@@ -87,6 +87,7 @@ export function layout(
 ): string {
   const links = [
     ["/", "Dashboard"],
+    ["/goals", "Goals"],
     ["/readings", "Readings"],
     ["/scales", "Scales"],
     ["/users", "Users"],
